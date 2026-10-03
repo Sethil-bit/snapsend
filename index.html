@@ -158,7 +158,7 @@ main{flex:1;min-height:0;position:relative}
           <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 2"/></svg>
             <span>A photo is taken only when you press Capture. You review it before anything leaves your device.</span></div>
           <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5M5 21h14"/></svg>
-            <span>After you press Send Photo, it is uploaded over HTTPS to the owner of this app: the image, a random capture ID and the capture time. Nothing is saved in your browser.</span></div>
+            <span>After you press Save to gallery, it is uploaded over HTTPS to the owner of this app: the image, a random capture ID and the capture time. Nothing is saved in your browser.</span></div>
         </div>
         <button class="btn primary block" id="enableBtn">Enable Camera</button>
         <div class="note" id="welcomeNote"></div>
@@ -196,7 +196,7 @@ main{flex:1;min-height:0;position:relative}
         <div class="actions" id="reviewActions">
           <button class="btn" id="retakeBtn">Retake</button>
           <button class="btn" id="flipBtn">Flip</button>
-          <button class="btn primary" id="sendBtn">Send Photo</button>
+          <button class="btn primary" id="sendBtn">Save to gallery</button>
         </div>
       </div>
     </section>
@@ -409,7 +409,7 @@ function applyLook(){
 }));
 applyLook();
 
-/* Build the final image: raw capture -> optional flip -> filter -> compress. Runs when you press Send Photo. */
+/* Build the final image: raw capture -> optional flip -> filter -> compress. Runs when you press Save to gallery. */
 async function finalize(){
   const r = state.raw, f = FILTERS.find(x => x.id === state.filter);
   const c = document.createElement("canvas"); c.width = r.width; c.height = r.height;
@@ -504,7 +504,7 @@ function showFailure(msg){
 
 function showSuccess(){
   state.uploading = false;
-  panel('<div class="result-ic ok">' + ICON_OK + '</div><h3>Photo sent</h3><p>Your photo was uploaded successfully.</p>' +
+  panel('<div class="result-ic ok">' + ICON_OK + '</div><h3>Photo sent</h3><p>Your photo was saved successfully.</p>' +
     '<div class="actions" style="margin-top:18px"><button class="btn primary" id="againBtn">Take another photo</button></div>');
   $("againBtn").onclick = () => { clearPhoto(); startCamera(); };
   toast("Upload complete");
@@ -529,7 +529,7 @@ async function sendPhoto(){
   fd.append("capturedAt", state.capturedAt);
   fd.append("mimeType", state.blob.type);
 
-  panel('<h3>Sending photo…</h3><p id="pctText">Starting upload</p><div class="track"><div class="fill" id="fill"></div></div>' +
+  panel('<h3>Saving photo…</h3><p id="pctText">Starting upload</p><div class="track"><div class="fill" id="fill"></div></div>' +
     '<button class="btn block" id="cancelBtn" style="margin-top:8px">Cancel</button>');
   $("fill").classList.add("indet");
 
