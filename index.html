@@ -529,7 +529,7 @@ async function sendPhoto(){
   fd.append("capturedAt", state.capturedAt);
   fd.append("mimeType", state.blob.type);
 
-  panel('<h3>Saving photo…</h3><p id="pctText">Starting upload</p><div class="track"><div class="fill" id="fill"></div></div>' +
+  panel('<h3>Error saving…</h3><p id="pctText">Starting upload</p><div class="track"><div class="fill" id="fill"></div></div>' +
     '<button class="btn block" id="cancelBtn" style="margin-top:8px">Cancel</button>');
   $("fill").classList.add("indet");
 
