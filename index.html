@@ -76,9 +76,12 @@ main{flex:1;min-height:0;position:relative}
 .frame img{object-fit:contain}
 .badge{position:absolute;left:14px;top:14px;font-size:.75rem;padding:6px 11px;border-radius:99px;background:rgba(0,0,0,.45);color:#fff;
   backdrop-filter:blur(10px);display:flex;align-items:center;gap:7px}
-.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.fxbtn{position:absolute;right:14px;top:14px;width:36px;height:36px;background:rgba(0,0,0,.45);color:#fff;border-color:rgba(255,255,255,.25);backdrop-filter:blur(10px);z-index:2}
-.fxbtn[aria-pressed="false"]{opacity:.55}
+.frame img.flipped{transform:scaleX(-1)}
+.chips{display:flex;gap:8px;overflow-x:auto;width:100%;padding:2px 4px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;font:inherit;font-size:.82rem;font-weight:600;color:var(--text);cursor:pointer;border-radius:99px;padding:8px 15px;background:var(--glass);border:1px solid var(--edge);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.chip.active{background:var(--accent);color:#fff;border-color:transparent}
+@media (orientation:landscape) and (max-height:520px){.chips{flex-direction:column;width:auto;overflow-x:visible;overflow-y:auto}}
 .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
 .flash.go{animation:flash .35s ease}
 @keyframes flash{0%{opacity:.85}100%{opacity:0}}
@@ -153,7 +156,7 @@ main{flex:1;min-height:0;position:relative}
           <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
             <span>Your browser will ask for permission. The camera only runs while you are on the camera screen.</span></div>
           <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 2"/></svg>
-            <span>A photo is taken only when you press Capture. You review it before anything leaves your device. A sparkle effect shows on the preview and is included in your photo; switch it off with the star button.</span></div>
+            <span>A photo is taken only when you press Capture. You review it before anything leaves your device.</span></div>
           <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5M5 21h14"/></svg>
             <span>After you press Send Photo, it is uploaded over HTTPS to the owner of this app: the image, a random capture ID and the capture time. Nothing is saved in your browser.</span></div>
         </div>
@@ -168,11 +171,9 @@ main{flex:1;min-height:0;position:relative}
         <div class="frame glass"><div class="inner">
           <video id="video" playsinline muted autoplay></video>
           <div class="badge"><span class="dot live"></span><span id="resBadge">Live</span></div>
-          <canvas class="fx" id="fx"></canvas>
-          <button class="icon-btn fxbtn" id="fxBtn" aria-pressed="true" aria-label="Sparkle effect on. Tap to turn off">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></button>
           <div class="flash" id="flash"></div>
         </div></div>
+        <div class="chips" id="chipsCam" role="group" aria-label="Photo filters"></div>
         <div class="bar">
           <button class="icon-btn side" id="stopBtn" aria-label="Turn camera off">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
@@ -191,8 +192,10 @@ main{flex:1;min-height:0;position:relative}
           <div class="badge" id="metaBadge"></div>
           <div class="overlay" id="overlay"><div class="panel glass" id="panel"></div></div>
         </div></div>
+        <div class="chips" id="chipsRev" role="group" aria-label="Photo filters"></div>
         <div class="actions" id="reviewActions">
           <button class="btn" id="retakeBtn">Retake</button>
+          <button class="btn" id="flipBtn">Flip</button>
           <button class="btn primary" id="sendBtn">Send Photo</button>
         </div>
       </div>
@@ -219,8 +222,8 @@ main{flex:1;min-height:0;position:relative}
 const CONFIG = {
   UPLOAD_API_URL: "https://snapsend-upload.sethilyaddehigetest.workers.dev",
   MAX_FILE_SIZE_MB: 10,        // upload is blocked if the compressed photo is still larger
-  IMAGE_QUALITY: 0.9,          // starting JPEG/WebP quality (0–1)
-  MAX_DIMENSION: 2560,         // longest side in px after resizing (camera may be larger)
+  IMAGE_QUALITY: 0.92,          // starting JPEG/WebP quality (0–1)
+  MAX_DIMENSION: 3840,         // longest side in px after resizing (camera may be larger)
   UPLOAD_TIMEOUT_MS: 45000,    // abort upload if it takes longer than this
   PREFER_WEBP: false,          // true = WebP when supported (smaller); false = JPEG (most compatible)
   FORM_FIELD_NAME: "photo",    // multipart field name your backend reads the file from
@@ -310,6 +313,10 @@ async function startCamera(){
   v.srcObject = state.stream;
   await v.play().catch(() => {});
   const track = state.stream.getVideoTracks()[0];
+  try { // ask for continuous autofocus where the camera supports it (sharper photos)
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if (caps.focusMode && caps.focusMode.includes("continuous")) await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+  } catch {}
   const s = track.getSettings();
   const facing = s.facingMode || state.facing;
   v.classList.toggle("mirror", facing === "user");
@@ -322,7 +329,6 @@ async function startCamera(){
     $("switchBtn").classList.toggle("hidden", cams.length < 2);
   } catch { $("switchBtn").classList.add("hidden"); }
   show("camera");
-  fxKick();
   return true;
 }
 function stopCamera(){
@@ -347,50 +353,6 @@ document.addEventListener("visibilitychange", () => {
   else if (!document.hidden && $("s-camera").classList.contains("active") && !state.stream){ startCamera(); }
 });
 
-/* ---------- sparkle effect (visible overlay; also baked into the captured photo) ---------- */
-const fx = { on: true, raf: 0, t: 0, parts: [] };
-for (let i = 0; i < 60; i++) fx.parts.push({ u: Math.random(), v: Math.random(), r: .6 + Math.random() * 1.4, p: Math.random() * 6.28, s: .6 + Math.random() * 1.2, h: Math.random() < .5 ? 200 : 320 });
-
-function star(c, x, y, s, a, h){
-  c.save(); c.translate(x, y); c.globalAlpha = a;
-  const g = c.createRadialGradient(0, 0, 0, 0, 0, s);
-  g.addColorStop(0, "hsla(" + h + ",100%,92%,1)"); g.addColorStop(.35, "hsla(" + h + ",100%,75%,.5)"); g.addColorStop(1, "hsla(" + h + ",100%,70%,0)");
-  c.fillStyle = g; c.beginPath(); c.arc(0, 0, s, 0, 6.283); c.fill();
-  c.fillStyle = "#fff"; c.beginPath();
-  c.moveTo(0, -s * 1.5); c.quadraticCurveTo(0, 0, s * 1.5, 0); c.quadraticCurveTo(0, 0, 0, s * 1.5);
-  c.quadraticCurveTo(0, 0, -s * 1.5, 0); c.quadraticCurveTo(0, 0, 0, -s * 1.5); c.fill();
-  c.restore();
-}
-// place(u,v) maps normalised preview coordinates to canvas pixels; unit scales sparkle size.
-function paintSparkles(c, t, place, unit){
-  c.globalCompositeOperation = "lighter";
-  for (const p of fx.parts){
-    const tw = .5 + .5 * Math.sin(t * p.s * 2 + p.p);
-    const v = ((p.v - t * .01 * p.s) % 1 + 1) % 1;
-    const [x, y] = place(p.u + Math.sin(t * .4 + p.p) * .01, v);
-    star(c, x, y, p.r * unit * (.6 + .6 * tw), tw * .9, p.h);
-  }
-  c.globalCompositeOperation = "source-over";
-}
-function fxLoop(now){
-  fx.raf = 0;
-  const cv = $("fx"), c = cv.getContext("2d");
-  if (!fx.on || !$("s-camera").classList.contains("active")){ c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height); return; }
-  const d = Math.min(devicePixelRatio || 1, 2), w = cv.clientWidth, h = cv.clientHeight;
-  if (cv.width !== w * d || cv.height !== h * d){ cv.width = w * d; cv.height = h * d; }
-  c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, w, h);
-  fx.t = now / 1000;
-  paintSparkles(c, fx.t, (u, v) => [u * w, v * h], 9);
-  fx.raf = requestAnimationFrame(fxLoop);
-}
-function fxKick(){ if (!fx.raf) fx.raf = requestAnimationFrame(fxLoop); }
-$("fxBtn").onclick = () => {
-  fx.on = !fx.on;
-  const b = $("fxBtn"); b.setAttribute("aria-pressed", fx.on);
-  b.setAttribute("aria-label", "Sparkle effect " + (fx.on ? "on. Tap to turn off" : "off. Tap to turn on"));
-  toast("Sparkle effect " + (fx.on ? "on" : "off")); fxKick();
-};
-
 /* ---------- capture + compression ---------- */
 function toBlob(canvas, type, q){ return new Promise(res => canvas.toBlob(res, type, q)); }
 
@@ -407,45 +369,112 @@ async function encode(canvas){
   return blob;
 }
 
+/* ---------- filters (one colour-matrix definition drives the live preview AND the saved photo) ---------- */
+function mk(o){
+  const { sat = 1, sep = 0, gray = 0, bri = 1, con = 1, off = 0, tint = [1, 1, 1] } = o;
+  const mm = (A, B) => { const R = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) R.push(A[i*3]*B[j] + A[i*3+1]*B[3+j] + A[i*3+2]*B[6+j]); return R; };
+  const S = [.213+.787*sat,.715-.715*sat,.072-.072*sat,.213-.213*sat,.715+.285*sat,.072-.072*sat,.213-.213*sat,.715-.715*sat,.072+.928*sat];
+  const k = 1 - sep, P = [.393+.607*k,.769-.769*k,.189-.189*k,.349-.349*k,.686+.314*k,.168-.168*k,.272-.272*k,.534-.534*k,.131+.869*k];
+  const g = 1 - gray, G = [.2126+.7874*g,.7152-.7152*g,.0722-.0722*g,.2126-.2126*g,.7152+.2848*g,.0722-.0722*g,.2126-.2126*g,.7152-.7152*g,.0722+.9278*g];
+  const M = mm(G, mm(P, S));
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) M[i*3+j] *= bri * tint[i] * con;
+  return { m: M, o: .5 * (1 - con) + off };
+}
+const FILTERS = [
+  { id: "none",    name: "Original", ...mk({}) },
+  { id: "vivid",   name: "Vivid",    ...mk({ sat: 1.4, con: 1.08 }) },
+  { id: "warm",    name: "Warm",     ...mk({ sat: 1.15, bri: 1.03, tint: [1.08, 1, .9] }) },
+  { id: "cool",    name: "Cool",     ...mk({ sat: 1.1, tint: [.92, 1, 1.1] }) },
+  { id: "dreamy",  name: "Dreamy",   ...mk({ sat: 1.2, bri: 1.08, con: .92, off: .02, tint: [1.04, 1, 1.04] }) },
+  { id: "vintage", name: "Vintage",  ...mk({ sat: .9, sep: .45, con: .92, off: .03 }) },
+  { id: "mono",    name: "Mono",     ...mk({ gray: 1, con: 1.15 }) },
+  { id: "noir",    name: "Noir",     ...mk({ gray: 1, con: 1.4, bri: .95 }) }
+];
+state.filter = "none";
+document.body.insertAdjacentHTML("beforeend", '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>' +
+  FILTERS.map(f => '<filter id="f-' + f.id + '" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="' +
+    [0, 1, 2].map(i => f.m.slice(i*3, i*3+3).join(" ") + " 0 " + f.o).join(" ") + ' 0 0 0 1 0"/></filter>').join("") + '</defs></svg>');
+const cssFilter = () => state.filter === "none" ? "none" : "url(#f-" + state.filter + ")";
+function applyLook(){
+  $("video").style.filter = cssFilter();
+  $("preview").style.filter = cssFilter();
+  $("preview").classList.toggle("flipped", !!state.flip);
+  document.querySelectorAll(".chip").forEach(b => b.classList.toggle("active", b.dataset.id === state.filter));
+}
+["chipsCam", "chipsRev"].forEach(id => FILTERS.forEach(f => {
+  const b = document.createElement("button");
+  b.className = "chip"; b.dataset.id = f.id; b.textContent = f.name;
+  b.onclick = () => { state.filter = f.id; applyLook(); };
+  $(id).appendChild(b);
+}));
+applyLook();
+
+/* Build the final image: raw capture -> optional flip -> filter -> compress. Runs when you press Send Photo. */
+async function finalize(){
+  const r = state.raw, f = FILTERS.find(x => x.id === state.filter);
+  const c = document.createElement("canvas"); c.width = r.width; c.height = r.height;
+  const x = c.getContext("2d");
+  if (state.flip){ x.translate(c.width, 0); x.scale(-1, 1); }
+  x.drawImage(r, 0, 0); x.setTransform(1, 0, 0, 1, 0, 0);
+  if (f.id !== "none"){
+    const img = x.getImageData(0, 0, c.width, c.height), d = img.data, m = f.m, o = f.o * 255;
+    for (let i = 0; i < d.length; i += 4){
+      const R = d[i], G = d[i+1], B = d[i+2];
+      d[i]   = m[0]*R + m[1]*G + m[2]*B + o;
+      d[i+1] = m[3]*R + m[4]*G + m[5]*B + o;
+      d[i+2] = m[6]*R + m[7]*G + m[8]*B + o;
+    }
+    x.putImageData(img, 0, 0);
+  }
+  state.blob = await encode(c);
+}
+
 $("captureBtn").onclick = async () => {
   const v = $("video");
   if (!state.stream || !v.videoWidth){ toast("Camera is not ready yet", "bad"); return; }
-  // Resize only if the camera frame is larger than MAX_DIMENSION
-  const scale = Math.min(1, CONFIG.MAX_DIMENSION / Math.max(v.videoWidth, v.videoHeight));
-  const c = document.createElement("canvas");
-  c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
-  const ctx = c.getContext("2d");
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(v, 0, 0, c.width, c.height);
-  // Bake the same sparkles you see on screen into the photo, aligned to the visible (cropped, maybe mirrored) preview.
-  const fw = $("fx").clientWidth, fh = $("fx").clientHeight;
-  if (fx.on && fw && fh){
-    const sc = Math.max(fw / c.width, fh / c.height), visW = fw / sc, visH = fh / sc;
-    const ox = (c.width - visW) / 2, oy = (c.height - visH) / 2, mir = v.classList.contains("mirror");
-    paintSparkles(ctx, fx.t, (u, w) => [ox + (mir ? 1 - u : u) * visW, oy + w * visH], 9 * (visW / fw));
-  }
-  const f = $("flash"); f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
-  if (navigator.vibrate) navigator.vibrate(15);
+  const btn = $("captureBtn"); btn.disabled = true;
+  try {
+    const mir = v.classList.contains("mirror");   // front camera: the live preview is a mirror image
+    let src = v, sw = v.videoWidth, sh = v.videoHeight;
+    // Prefer the camera's full-resolution still photo (sharper than a video frame) where the browser supports it.
+    try {
+      if ("ImageCapture" in window){
+        const bmp = await createImageBitmap(await new ImageCapture(state.stream.getVideoTracks()[0]).takePhoto());
+        if (Math.abs(bmp.width / bmp.height - sw / sh) < .03 * (sw / sh)){ src = bmp; sw = bmp.width; sh = bmp.height; }
+      }
+    } catch {}
+    const scale = Math.min(1, CONFIG.MAX_DIMENSION / Math.max(sw, sh));
+    const c = document.createElement("canvas");
+    c.width = Math.round(sw * scale); c.height = Math.round(sh * scale);
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(src, 0, 0, c.width, c.height);
+    const f = $("flash"); f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
+    if (navigator.vibrate) navigator.vibrate(15);
 
-  const blob = await encode(c);
-  if (!blob){ toast("Could not process the photo. Please retake.", "bad"); return; }
-  state.blob = blob; state.captureId = newId(); state.capturedAt = new Date().toISOString();
-  if (state.url) URL.revokeObjectURL(state.url);
-  state.url = URL.createObjectURL(blob);
-  $("preview").src = state.url;
-  $("metaBadge").textContent = c.width + " × " + c.height + " · " + fmtSize(blob.size);
-  stopCamera();            // release the camera while reviewing
-  showReviewActions();
-  show("review");
+    const shown = await toBlob(c, "image/jpeg", .92);
+    if (!shown){ toast("Could not process the photo. Please retake.", "bad"); return; }
+    state.raw = c; state.blob = null; state.captureId = newId(); state.capturedAt = new Date().toISOString();
+    state.flip = mir;   // front camera photos are flipped to match the mirror-style preview you saw
+    if (state.url) URL.revokeObjectURL(state.url);
+    state.url = URL.createObjectURL(shown);
+    $("preview").src = state.url;
+    $("metaBadge").textContent = c.width + " × " + c.height;
+    applyLook();
+    stopCamera();
+    showReviewActions();
+    show("review");
+  } finally { btn.disabled = false; }
 };
 
 /* ---------- review / retake ---------- */
 function clearPhoto(){
   if (state.url) URL.revokeObjectURL(state.url);
-  state.blob = state.url = state.captureId = state.capturedAt = null;
+  state.blob = state.url = state.captureId = state.capturedAt = state.raw = null;
   $("preview").removeAttribute("src");
 }
 function showReviewActions(){ $("overlay").classList.remove("show"); $("reviewActions").classList.remove("hidden"); }
+$("flipBtn").onclick = () => { state.flip = !state.flip; applyLook(); };
 $("retakeBtn").onclick = async () => { clearPhoto(); await startCamera(); };
 
 /* ---------- upload ---------- */
@@ -481,8 +510,13 @@ function showSuccess(){
   toast("Upload complete");
 }
 
-function sendPhoto(){
+async function sendPhoto(){
   if (state.uploading) return;
+  state.uploading = true;
+  panel('<h3>Preparing photo…</h3><p>Applying your look</p><div class="track"><div class="fill indet"></div></div>');
+  await new Promise(r => setTimeout(r, 30));
+  try { await finalize(); } catch { showFailure("Could not process the photo. Please retake."); return; }
+  state.uploading = false;
   const problem = validate();
   if (problem){ showFailure(problem); return; }
   state.uploading = true;
