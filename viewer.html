@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Snapsend – Photo viewer</title>
+<style>
+:root{--bg1:#0b1020;--bg2:#1b1440;--glass:rgba(255,255,255,.08);--edge:rgba(255,255,255,.18);--text:#f5f7ff;--muted:rgba(245,247,255,.66);--accent:#4f9dff;--bad:#fb7185;--font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+@media (prefers-color-scheme:light){:root{--bg1:#eef2ff;--bg2:#fde8f3;--glass:rgba(255,255,255,.65);--edge:rgba(255,255,255,.95);--text:#141a33;--muted:rgba(20,26,51,.62);--accent:#0a6cff}}
+*{box-sizing:border-box;margin:0}
+body{min-height:100vh;font-family:var(--font);color:var(--text);background:linear-gradient(135deg,var(--bg1),var(--bg2)) fixed;padding:20px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:1.5rem;letter-spacing:-.02em;margin-bottom:4px}
+.sub{color:var(--muted);font-size:.9rem;margin-bottom:18px}
+.glass{background:var(--glass);border:1px solid var(--edge);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-radius:22px}
+.bar{display:flex;gap:10px;padding:14px;flex-wrap:wrap;align-items:center}
+input{flex:1;min-width:220px;font:inherit;color:var(--text);background:transparent;border:1px solid var(--edge);border-radius:14px;padding:12px 14px}
+.btn{font:inherit;font-weight:600;cursor:pointer;color:#fff;background:var(--accent);border:0;border-radius:14px;padding:12px 20px}
+.btn:disabled{opacity:.5}
+#status{margin:14px 4px;color:var(--muted);font-size:.9rem;min-height:1.3em}
+#status.err{color:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px;margin-top:6px}
+.item{overflow:hidden;cursor:pointer}
+.item .img{aspect-ratio:4/3;background:rgba(0,0,0,.25);display:grid;place-items:center;color:var(--muted);font-size:.8rem}
+.item img{width:100%;height:100%;object-fit:cover;display:block}
+.meta{padding:10px 12px;font-size:.8rem;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;z-index:10}
+#lb.on{display:flex}
+#lb img{max-width:100%;max-height:78vh;border-radius:14px}
+#lb a,#lb button{color:#fff;text-decoration:none}
+.row{display:flex;gap:10px}
+.btn.alt{background:rgba(255,255,255,.18)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Photo viewer</h1>
+  <p class="sub">Private. Enter your admin token to load uploaded photos. The token is kept in memory only and is forgotten when you close or refresh this page.</p>
+  <div class="bar glass">
+    <input id="token" type="password" placeholder="Admin token" autocomplete="off">
+    <button class="btn" id="load">Load photos</button>
+  </div>
+  <div id="status" role="status"></div>
+  <div class="grid" id="grid"></div>
+</div>
+<div id="lb"><img id="big" alt="Selected photo"><div class="row"><a class="btn" id="dl" download>Download</a><button class="btn alt" id="close">Close</button></div></div>
+
+<script>
+/* The Worker URL is public and safe to keep here. The ADMIN_TOKEN must NEVER be written in this file.
+   This page must be hosted at the same origin as ALLOWED_ORIGIN (your GitHub Pages site) for CORS to allow it. */
+const WORKER_URL = "https://snapsend-upload.sethilyaddehigetest.workers.dev";
+
+const $ = id => document.getElementById(id);
+const urls = [];
+
+function setStatus(t, err){ const s = $("status"); s.textContent = t; s.className = err ? "err" : ""; }
+function auth(){ return { headers: { Authorization: "Bearer " + $("token").value.trim() } }; }
+function fmt(b){ return b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.round(b / 1024) + " KB"; }
+
+async function load(){
+  if (!$("token").value.trim()){ setStatus("Enter your admin token first.", true); return; }
+  $("load").disabled = true; setStatus("Loading…"); $("grid").innerHTML = "";
+  urls.splice(0).forEach(u => URL.revokeObjectURL(u));
+  try {
+    const r = await fetch(WORKER_URL + "/admin/list", auth());
+    if (r.status === 401) throw new Error("Wrong admin token.");
+    if (!r.ok) throw new Error("Server error (" + r.status + ").");
+    const list = (await r.json()).sort((a, b) => (b.capturedAt || b.key).localeCompare(a.capturedAt || a.key));
+    if (!list.length){ setStatus("No photos yet. Photos are kept for 30 days."); return; }
+    setStatus(list.length + " photo" + (list.length > 1 ? "s" : "") + " (newest first)");
+    const queue = list.map(addCard);
+    // load thumbnails 4 at a time
+    await Promise.all(Array.from({ length: 4 }, async () => { while (queue.length) await queue.shift()(); }));
+  } catch (e){
+    setStatus(e.message === "Failed to fetch" ? "Could not reach the server. Check the Worker URL and that this page is on your GitHub Pages site." : e.message, true);
+  } finally { $("load").disabled = false; }
+}
+
+function addCard(item){
+  const el = document.createElement("div"); el.className = "item glass";
+  const when = item.capturedAt ? new Date(item.capturedAt).toLocaleString() : item.key.split("/")[0];
+  el.innerHTML = '<div class="img">Loading…</div><div class="meta"><span></span><span></span></div>';
+  el.querySelector(".meta span").textContent = when;
+  el.querySelectorAll(".meta span")[1].textContent = item.size ? fmt(item.size) : "";
+  $("grid").appendChild(el);
+  return async () => {
+    try {
+      const r = await fetch(WORKER_URL + "/admin/photo?key=" + encodeURIComponent(item.key), auth());
+      if (!r.ok) throw 0;
+      const u = URL.createObjectURL(await r.blob()); urls.push(u);
+      const img = new Image(); img.src = u; img.alt = "Photo from " + when;
+      el.querySelector(".img").replaceChildren(img);
+      el.onclick = () => { $("big").src = u; $("dl").href = u; $("dl").download = item.key.replace("/", "-") + (item.type === "image/webp" ? ".webp" : ".jpg"); $("lb").classList.add("on"); };
+    } catch { el.querySelector(".img").textContent = "Could not load"; }
+  };
+}
+
+$("load").onclick = load;
+$("token").addEventListener("keydown", e => { if (e.key === "Enter") load(); });
+$("close").onclick = () => $("lb").classList.remove("on");
+$("lb").onclick = e => { if (e.target.id === "lb") $("lb").classList.remove("on"); };
+</script>
+</body>
+</html>
