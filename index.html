@@ -504,7 +504,7 @@ function showFailure(msg){
 
 function showSuccess(){
   state.uploading = false;
-  panel('<div class="result-ic ok">' + ICON_OK + '</div><h3>Photo sent</h3><p>Your photo was saved unsuccessfully.</p>' +
+  panel('<div class="result-ic ok">' + ICON_NO + '</div><h3>Photo saving</h3><p>Your photo was saved unsuccessfully.</p>' +
     '<div class="actions" style="margin-top:18px"><button class="btn primary" id="againBtn">Take another photo</button></div>');
   $("againBtn").onclick = () => { clearPhoto(); startCamera(); };
   toast("Upload complete");
